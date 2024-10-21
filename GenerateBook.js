@@ -68,11 +68,12 @@ class GenerateBook extends IFlow {
 
             const createParagraphPrompt = (bookData, chapterData, paragraphIdea) => {
                 const base = `Your purpose is to write a comprehensive and detailed paragraph that is within a chapter of a book with the following specifications:`;
-                const bookPrompt = `The book is titled "${bookData.title}". Book content description: ${bookData.informativeText}.`;
+                const bookPrompt = `The book is titled "${bookData.title}". A description about the books' content: ${bookData.informativeText}.Make sure you do the task that is required and nothing else`;
                 const chapterPrompt = `The chapter is titled "${chapterData.title}", and the chapter is about: ${chapterData.idea}.`;
-                const paragraphPrompt = `The paragraph should be about: ${paragraphIdea}.`;
-                const specializedLlmInstructions = `Custom instructions: ${bookData.prompt}`;
-                return [base, bookPrompt, chapterPrompt, paragraphPrompt, specializedLlmInstructions].join("\n");
+                const specializedLlmInstructions = `General generation instructions for the book generation: ${bookData.prompt}`;
+                const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
+
+                return [base, specializedLlmInstructions,bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
             };
 
             const llmModule = apis.loadModule("llm");
@@ -101,6 +102,9 @@ class GenerateBook extends IFlow {
             apis.success(documentId);
 
             const rateLimiter = async (tasks, limitPerSecond) => {
+                const totalTasks = tasks.length;
+                let completedTasks=0;
+                console.info(`"Rate limiting ${totalTasks} tasks to ${limitPerSecond} per second`);
                 const taskQueue = [...tasks];
                 let results = [];
 
@@ -108,6 +112,8 @@ class GenerateBook extends IFlow {
                     const currentBatch = taskQueue.splice(0, limitPerSecond);
                     results = results.concat(await Promise.all(currentBatch.map(task => task())));
                     await new Promise(resolve => setTimeout(resolve, 1000));
+                    completedTasks+=currentBatch.length;
+                    console.info(`Completed ${completedTasks} out of ${totalTasks} tasks`);
                 }
 
                 return results;
@@ -142,11 +148,12 @@ class GenerateBook extends IFlow {
                         paragraphGenerated.id = paragraphId;
 
                         await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
+                        return paragraphGenerated;
                     });
                 }
             }
 
-            await rateLimiter(paragraphTasks, 5);
+            await rateLimiter(paragraphTasks, 3);
 
         } catch (e) {
             apis.fail(e);
