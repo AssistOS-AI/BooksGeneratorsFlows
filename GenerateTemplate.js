@@ -147,9 +147,7 @@ class GenerateTemplate extends IFlow {
             const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5, generationTemplateChapters);
 
             const chapters = JSON.parse(chaptersJsonString);
-            let chapterPromises=[];
             for (const chapter of chapters.chapters) {
-                chapterPromises.push((async () => {
                     const chapterObj = {
                         title: chapter.title,
                         idea: chapter.idea,
@@ -172,9 +170,7 @@ class GenerateTemplate extends IFlow {
                         };
                         await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
                     }
-                })());
-            }
-            await Promise.all(chapterPromises);
+                }
         } catch (e) {
             apis.fail(e);
         }

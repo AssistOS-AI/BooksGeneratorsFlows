@@ -100,6 +100,21 @@ class GenerateBook extends IFlow {
             const documentId = await documentModule.addDocument(parameters.spaceId, documentData);
             apis.success(documentId);
 
+            const rateLimiter = async (tasks, limitPerSecond) => {
+                const taskQueue = [...tasks];
+                let results = [];
+
+                while (taskQueue.length > 0) {
+                    const currentBatch = taskQueue.splice(0, limitPerSecond);
+                    results = results.concat(await Promise.all(currentBatch.map(task => task())));
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+                return results;
+            };
+
+            let paragraphTasks = [];
+
             for (const chapter of templateDocument.chapters) {
                 const chapterData = {
                     title: chapter.title,
@@ -107,28 +122,32 @@ class GenerateBook extends IFlow {
                 };
                 const chapterId = await documentModule.addChapter(parameters.spaceId, documentId, chapterData);
 
-                const paragraphPromises = chapter.paragraphs.map(async (paragraph) => {
-                    const paragraphData = {
-                        text: paragraph.text,
-                    };
-                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphData);
+                for (const paragraph of chapter.paragraphs) {
+                    paragraphTasks.push(async () => {
+                        const paragraphData = {
+                            text: paragraph.text,
+                        };
+                        const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphData);
 
-                    const paragraphGenerationPrompt = createParagraphPrompt(abstract, chapterData, paragraph.text);
+                        const paragraphGenerationPrompt = createParagraphPrompt(abstract, chapterData, paragraph.text);
 
-                    const response = await llmModule.sendLLMRequest({
-                        prompt: paragraphGenerationPrompt,
-                        modelName: "GPT-4o"
-                    }, parameters.spaceId);
+                        const response = await llmModule.sendLLMRequest({
+                            prompt: paragraphGenerationPrompt,
+                            modelName: "GPT-4o"
+                        }, parameters.spaceId);
 
-                    const paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
+                        const paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
 
-                    const paragraphGenerated = JSON.parse(paragraphJsonString);
+                        const paragraphGenerated = JSON.parse(paragraphJsonString);
+                        paragraphGenerated.id = paragraphId;
 
-                    await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
-                });
-
-                await Promise.all(paragraphPromises);
+                        await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
+                    });
+                }
             }
+
+            await rateLimiter(paragraphTasks, 5);
+
         } catch (e) {
             apis.fail(e);
         }
