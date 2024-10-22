@@ -73,7 +73,7 @@ class GenerateBook extends IFlow {
                 const specializedLlmInstructions = `General generation instructions for the book generation: ${bookData.prompt}`;
                 const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
 
-                return [base, specializedLlmInstructions,bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
+                return [base, specializedLlmInstructions, bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
             };
 
             const llmModule = apis.loadModule("llm");
@@ -99,21 +99,37 @@ class GenerateBook extends IFlow {
             });
 
             const documentId = await documentModule.addDocument(parameters.spaceId, documentData);
+
             apis.success(documentId);
+
+            const retryAsync = async (fn, retries = 3, delay = 2000) => {
+                for (let attempt = 1; attempt <= retries; attempt++) {
+                    try {
+                        return await fn();
+                    } catch (error) {
+                        if (attempt < retries) {
+                            console.warn(`------------------------------Attempt ${attempt} failed. Retrying in ${delay}ms...------------------------------`);
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        } else {
+                            console.error(`------------------------------All ${retries} attempts failed for function ${fn.name}.------------------------------`);
+                            throw error;
+                        }
+                    }
+                }
+            };
 
             const rateLimiter = async (tasks, limitPerSecond) => {
                 const totalTasks = tasks.length;
-                let completedTasks=0;
-                console.info(`"Rate limiting ${totalTasks} tasks to ${limitPerSecond} per second`);
+                let completedTasks = 0;
+                console.info(`------------------------------Rate limiting ${totalTasks} tasks to ${limitPerSecond} per second------------------------------`);
                 const taskQueue = [...tasks];
                 let results = [];
 
                 while (taskQueue.length > 0) {
                     const currentBatch = taskQueue.splice(0, limitPerSecond);
                     results = results.concat(await Promise.all(currentBatch.map(task => task())));
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    completedTasks+=currentBatch.length;
-                    console.info(`Completed ${completedTasks} out of ${totalTasks} tasks`);
+                    completedTasks += currentBatch.length;
+                    console.info(`------------------------------Completed ${completedTasks} out of ${totalTasks} tasks------------------------------`);
                 }
 
                 return results;
@@ -129,27 +145,35 @@ class GenerateBook extends IFlow {
                 const chapterId = await documentModule.addChapter(parameters.spaceId, documentId, chapterData);
 
                 for (const paragraph of chapter.paragraphs) {
-                    paragraphTasks.push(async () => {
-                        const paragraphData = {
-                            text: paragraph.text,
-                        };
-                        const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphData);
+                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: paragraph.text});
+                    paragraphTasks.push(() => retryAsync(async () => {
+                        try {
+                            const paragraphGenerationPrompt = createParagraphPrompt(abstract, chapterData, paragraph.text);
+                            let response = await llmModule.sendLLMRequest({
+                                prompt: paragraphGenerationPrompt,
+                                modelName: "GPT-4o"
+                            }, parameters.spaceId);
+                            let paragraphJsonString;
 
-                        const paragraphGenerationPrompt = createParagraphPrompt(abstract, chapterData, paragraph.text);
+                            try {
+                                paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
+                            } catch (error) {
+                                response = await llmModule.sendLLMRequest({
+                                    prompt: paragraphGenerationPrompt,
+                                    modelName: "GPT-4o"
+                                }, parameters.spaceId);
+                                paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
+                            }
 
-                        const response = await llmModule.sendLLMRequest({
-                            prompt: paragraphGenerationPrompt,
-                            modelName: "GPT-4o"
-                        }, parameters.spaceId);
+                            const paragraphGenerated = JSON.parse(paragraphJsonString);
+                            paragraphGenerated.id = paragraphId;
 
-                        const paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
-
-                        const paragraphGenerated = JSON.parse(paragraphJsonString);
-                        paragraphGenerated.id = paragraphId;
-
-                        await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
-                        return paragraphGenerated;
-                    });
+                            await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
+                            return paragraphGenerated;
+                        } catch (error) {
+                            /* mark the paragraph as failed to generate */
+                        }
+                    }));
                 }
             }
 
