@@ -99,7 +99,9 @@ class GenerateTemplate extends IFlow {
                 const bookDataInstructions = `General Book Generation Specifications: ${bookGenerationInfo}`;
                 const bookInfo = `Book data: ${JSON.stringify(bookData)}`;
                 const chapterInfo = `Chapter data: ${JSON.stringify(chapterData)}`;
-                const overrideParagraphCountBias = "If you have any bias towards the number of paragraphs you're inclined to generate, revoke it. You should generate the number of paragraphs that you think is best for the chapter, and keep in mind this is the chapter of a book. And a chapter can have even 1000 paragraphs.";
+                const overrideParagraphCountBias = "If you have any bias towards the number of paragraphs you're inclined to generate, revoke it. " +
+                    "You should generate the number of paragraphs that you think is best for the chapter, and keep in mind this is the chapter of a book." +
+                    " And a chapter can have even 1000 paragraphs.";
                 return [base, specialInstructions, bookDataInstructions, bookInfo, chapterInfo, overrideParagraphCountBias].join("\n");
             };
 

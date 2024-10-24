@@ -68,7 +68,8 @@ class GenerateBook extends IFlow {
 
             const createParagraphPrompt = (bookData, chapterData, paragraphIdea) => {
                 const base = `Your purpose is to write a comprehensive and detailed paragraph that is within a chapter of a book with the following specifications:`;
-                const bookPrompt = `The book is titled "${bookData.title}". A description about the books' content: ${bookData.informativeText}.Make sure you do the task that is required and nothing else`;
+                const bookPrompt = `The book is titled "${bookData.title}". A description about the books' content: ${bookData.informativeText}.
+                Make sure you do the task that is required and nothing else`;
                 const chapterPrompt = `The chapter is titled "${chapterData.title}", and the chapter is about: ${chapterData.idea}.`;
                 const specializedLlmInstructions = `General generation instructions for the book generation: ${bookData.prompt}`;
                 const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
