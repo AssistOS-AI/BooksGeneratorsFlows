@@ -27,11 +27,11 @@ class GenerateTemplate extends IFlow {
             const llmModule = apis.loadModule("llm");
             const documentModule = apis.loadModule("document");
             const utilModule= apis.loadModule("util");
-            debugger;
+
             const {fillTemplate}= utilModule;
 
-            const generateBookSchemaPromptTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/generateBookChaptersSchemaPromptTemplate.json")));
-            const generateParagraphsSchemaPromptTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/generateChapterIdeasPromptTemplate.json")));
+            const bookTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/bookSchema.json")));
+            const paragraphTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/chapterSchema.json")));
 
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
