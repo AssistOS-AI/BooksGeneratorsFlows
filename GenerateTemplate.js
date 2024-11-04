@@ -31,6 +31,19 @@ class GenerateTemplate extends IFlow {
             const {fillTemplate}= utilModule;
 
             const bookTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/bookSchema.json")));
+
+            const bookTemplate1 = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/promptGenerareBook1.json")));
+
+            /****/
+            const basicTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/basicBookSchema.json")));
+            const characterAccentTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/characterAccentBookSchema.json")));
+            const conflictDrivenTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/conflictDrivenBookSchema.json")))
+            const imaginativeWorldTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/imaginativeWorldBookSchema.json")))
+            const plotDrivenTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/plotDrivenBookSchema.json")))
+            const relationBetweenTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/RelationBetweenBookSchema.json")))
+            const transformativeJourneyTemplate= JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/transformativeJourneyBookSchema.json")))
+
+            /****/
             const paragraphTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/chapterSchema.json")));
 
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
