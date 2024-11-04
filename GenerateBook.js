@@ -14,7 +14,6 @@ class GenerateBook extends IFlow {
 
     async userCode(apis, parameters) {
         try {
-
             const bookTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/generateBooksSchema.json")));
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
