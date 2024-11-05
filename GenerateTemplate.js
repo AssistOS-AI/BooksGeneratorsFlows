@@ -23,10 +23,10 @@ class GenerateTemplate extends IFlow {
 
     async userCode(apis, parameters) {
         try {
-            const applicationModule = apis.loadModule("application");
             const llmModule = apis.loadModule("llm");
             const documentModule = apis.loadModule("document");
             const utilModule = apis.loadModule("util");
+            const applicationModule = apis.loadModule("application");
 
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
@@ -83,18 +83,6 @@ class GenerateTemplate extends IFlow {
                 }
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
-
-            const createParagraphsPrompt = (generationTemplateStructure, bookData, chapterData) => {
-                const base = "You're a book content Manager. Your purpose is to generate a list of paragraphs based on user specifications" +
-                    ` which will be part of a chapter used to create a book. Your response should match this json schema: ${JSON.stringify(generationTemplateStructure)}.
-                    Please respect the number of paragraphs mentioned in the book data`
-                const bookInfo = `Book data: ${JSON.stringify(bookData)}`;
-                const chapterInfo = `Chapter data: ${JSON.stringify(chapterData)}`;
-                const overrideParagraphCountBias = "If you have any bias towards the number of paragraphs you're inclined to generate, revoke it. " +
-                    "You should generate the number of paragraphs that you think is best for the chapter, and keep in mind this is the chapter of a book." +
-                    " And a chapter can have even 1000 paragraphs.";
-                return [base, bookInfo, chapterInfo, overrideParagraphCountBias].join("\n");
-            };
             const removeEmptyFields = (obj) => {
                 Object.keys(obj).forEach(key => {
                     if (!obj[key]) {
@@ -103,7 +91,6 @@ class GenerateTemplate extends IFlow {
                 });
                 return obj;
             }
-
             const convertIntFields = (obj) => {
                 Object.keys(obj).forEach(key => {
                     if (parseInt(obj[key])) {
@@ -114,12 +101,33 @@ class GenerateTemplate extends IFlow {
             }
             const unsanitizeObj = (obj) => {
                 Object.keys(obj).forEach(key => {
-                        if (typeof obj[key] === "string") {
-                            obj[key] = utilModule.unsanitize(obj[key]);
-                        }
-                    });
+                    if (typeof obj[key] === "string") {
+                        obj[key] = utilModule.unsanitize(obj[key]);
+                    }
+                });
                 return obj;
             }
+
+            const addDocumentTemplate = async (parameters) => {
+                const documentObj = {
+                    title: `template_${parameters.configs.title}`,
+                    abstract: JSON.stringify({
+                        ...parameters.configs
+                    }),
+                };
+                return await documentModule.addDocument(parameters.spaceId, documentObj);
+            }
+
+            const createParagraphsPrompt = (generationTemplateStructure, bookData, chapterData) => {
+                const base = "You're a book content Manager. Your purpose is to generate a list of paragraphs based on user specifications" +
+                    ` which will be part of a chapter used to create a book. Your response should match this json schema: ${JSON.stringify(generationTemplateStructure)}.
+                    Please respect the number of paragraphs mentioned in the book data`
+                const bookInfo = `Book data: ${JSON.stringify(bookData)}`;
+                const chapterInfo = `Chapter data: ${JSON.stringify(chapterData)}`;
+                const overrideParagraphCountBias = "If you have any bias towards the number of paragraphs you're inclined to generate, revoke it. " +
+                    "Under no circumstance will you generate more or less paragraphs than the book data specifies(ideas per chapters)";
+                return [base, bookInfo, chapterInfo, overrideParagraphCountBias].join("\n");
+            };
             const generationTemplateParagraphs = {
                 paragraphs: [
                     {
@@ -128,12 +136,18 @@ class GenerateTemplate extends IFlow {
                 ]
             };
 
-            const documentObj = {
-                title: `template_${parameters.configs.title}`,
-                abstract: JSON.stringify({
-                    ...parameters.configs
-                }),
-            };
+            const getBookChaptersSchema = async()=>{
+                const llmResponse = await llmModule.sendLLMRequest({
+                    prompt: bookGenerationPrompt,
+                    modelName: "o1-mini"
+                }, parameters.spaceId);
+                const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5);
+                return JSON.parse(chaptersJsonString);
+            }
+
+
+            const documentId = await addDocumentTemplate(parameters);
+            apis.success(documentId);
 
             parameters.configs=removeEmptyFields(parameters.configs);
             parameters.configs=convertIntFields(parameters.configs);
@@ -141,43 +155,20 @@ class GenerateTemplate extends IFlow {
 
             const bookGenerationPrompt = parameters.configs["review-prompt"];
             delete parameters.configs["review-prompt"];
-            let bookData = parameters.configs;
+            const bookData = parameters.configs;
 
-            const documentId = await documentModule.addDocument(parameters.spaceId, documentObj);
 
-            apis.success(documentId);
+            const chapters = await getBookChaptersSchema();
 
-            const llmResponse = await llmModule.sendLLMRequest({
-                prompt: bookGenerationPrompt,
-                modelName: "GPT-4o"
-            }, parameters.spaceId);
-
-            const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5);
-
-            const chapters = JSON.parse(chaptersJsonString);
             for (const chapter of chapters.chapters) {
-                const chapterObj = {
-                    title: chapter.title,
-                    idea: chapter.idea,
-                };
-                const chapterId = await documentModule.addChapter(parameters.spaceId, documentId, chapterObj);
-
                 const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapter);
-
-                const llmResponse = await llmModule.sendLLMRequest({
-                    prompt: paragraphsPrompt,
-                    modelName: "GPT-4o"
-                }, parameters.spaceId);
-
-                const paragraphsJsonString = await ensureValidJson(llmResponse.messages[0], 5, generationTemplateParagraphs);
-                const paragraphsData = JSON.parse(paragraphsJsonString);
-
-                for (const paragraph of paragraphsData.paragraphs) {
-                    const paragraphObj = {
-                        text: paragraph.idea,
-                    };
-                    await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
-                }
+                const chapterId = (await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
+                    spaceId:parameters.spaceId,
+                    prompt:paragraphsPrompt,
+                    documentId:documentId,
+                    chapterTitle:chapter.title,
+                    chapterIdea:chapter.idea
+                })).data;
             }
         } catch (e) {
             apis.fail(e);
