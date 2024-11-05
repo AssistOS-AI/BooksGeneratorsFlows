@@ -62,7 +62,7 @@ class GenerateTemplate extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "GPT-4o"
+                            modelName: "o1-mini"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -136,7 +136,7 @@ class GenerateTemplate extends IFlow {
                 ]
             };
 
-            const getBookChaptersSchema = async()=>{
+            const getBookChaptersSchema = async () => {
                 const llmResponse = await llmModule.sendLLMRequest({
                     prompt: bookGenerationPrompt,
                     modelName: "o1-mini"
@@ -145,30 +145,29 @@ class GenerateTemplate extends IFlow {
                 return JSON.parse(chaptersJsonString);
             }
 
-
-            const documentId = await addDocumentTemplate(parameters);
-            apis.success(documentId);
-
-            parameters.configs=removeEmptyFields(parameters.configs);
-            parameters.configs=convertIntFields(parameters.configs);
-            parameters.configs=unsanitizeObj(parameters.configs);
+            parameters.configs = removeEmptyFields(parameters.configs);
+            parameters.configs = convertIntFields(parameters.configs);
+            parameters.configs = unsanitizeObj(parameters.configs);
 
             const bookGenerationPrompt = parameters.configs["review-prompt"];
             delete parameters.configs["review-prompt"];
             const bookData = parameters.configs;
 
+            const documentId = await addDocumentTemplate(parameters);
+            apis.success(documentId);
 
             const chapters = await getBookChaptersSchema();
 
             for (const chapter of chapters.chapters) {
                 const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapter);
-                const chapterId = (await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
-                    spaceId:parameters.spaceId,
-                    prompt:paragraphsPrompt,
-                    documentId:documentId,
-                    chapterTitle:chapter.title,
-                    chapterIdea:chapter.idea
-                })).data;
+                applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
+                    spaceId: parameters.spaceId,
+                    prompt: paragraphsPrompt,
+                    bookData: bookData,
+                    documentId: documentId,
+                    chapterTitle: chapter.title,
+                    chapterIdea: chapter.idea
+                })
             }
         } catch (e) {
             apis.fail(e);

@@ -14,7 +14,10 @@ class GenerateBook extends IFlow {
 
     async userCode(apis, parameters) {
         try {
-            const bookTemplate = JSON.parse(JSON.parse(await applicationModule.getApplicationFile(apis.spaceId, "BooksGenerator", "./data/templates/Prompts/generateBooksSchema.json")));
+            const llmModule = apis.loadModule("llm");
+            const documentModule = apis.loadModule("document");
+            const utilModule = apis.loadModule("util");
+            const applicationModule = apis.loadModule("application");
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
                     "RemoveOutsideJson": async (jsonString) => {
@@ -38,16 +41,20 @@ class GenerateBook extends IFlow {
                         return jsonString.trim();
                     },
                     "LlmHelper": async (jsonString) => {
-                        if (jsonSchema !== null) {
-                            const prompt = `Please correct the following JSON to match the schema ${JSON.stringify(jsonSchema)}:
-                            ${jsonString}. Only respond with a valid JSON that doesn't contain any code blocks or the \`\`\`json syntax.`;
-                            const response = await llmModule.sendLLMRequest({
-                                prompt,
-                                modelName: "GPT-4o"
-                            }, parameters.spaceId);
-                            return response.messages[0];
+                        let prompt;
+                        if (!jsonSchema) {
+                            prompt = `Please convert the following string into a json string:"${jsonString}".
+                             Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.`;
+                        } else {
+                            prompt = `Please convert the following string into a json string:${jsonString}.
+                             Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
+                             Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        return jsonString;
+                        const response = await llmModule.sendLLMRequest({
+                            prompt,
+                            modelName: "o1-mini"
+                        }, parameters.spaceId);
+                        return response.messages[0];
                     }
                 };
 
@@ -67,42 +74,28 @@ class GenerateBook extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            const createParagraphPrompt = (bookData, chapterData, paragraphIdea) => {
-                const base = `Your purpose is to write a comprehensive and detailed paragraph that is within a chapter of a book with the following specifications:`;
-                const bookPrompt = `The book is titled "${bookData.title}". A description about the books' content: ${bookData.informativeText}.
-                Make sure you do the task that is required and nothing else`;
-                const chapterPrompt = `The chapter is titled "${chapterData.title}", and the chapter is about: ${chapterData.idea}.`;
-                const specializedLlmInstructions = `General generation instructions for the book generation: ${bookData.prompt}`;
-                const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
-
-                return [base, specializedLlmInstructions, bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
-            };
-
-            const llmModule = apis.loadModule("llm");
-            const documentModule = apis.loadModule("document");
-            const utilModule = apis.loadModule("util");
-
-            const templateDocument = await documentModule.getDocument(parameters.spaceId, parameters.configs.documentId);
-
             const generateParagraphSchema = {
                 text: "String"
             };
 
-            const documentData = {
+            const createParagraphPrompt = (bookData, chapterData, paragraphIdea) => {
+                const base = `Your purpose is to write a comprehensive and detailed paragraph that is within a chapter of a book with the following specifications:`;
+                const paragraphTemplate=`Your response should only and only match this Structure in all circumstances: ${JSON.stringify(generateParagraphSchema)}. It should be a json string with a text field`;
+                const bookPrompt = `Details about the Book:${JSON.stringify(bookData)}`
+                const chapterPrompt = `Details about the Chapter:${JSON.stringify(chapterData)}`;
+                const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
+
+                return [base, paragraphTemplate,bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
+            };
+            const templateDocument = await documentModule.getDocument(parameters.spaceId, parameters.configs.documentId);
+
+            let bookDocument={
                 title: templateDocument.title.replace("template_", "book_"),
                 abstract: templateDocument.abstract,
-            };
+            }
 
-            const abstract = JSON.parse(templateDocument.abstract);
-            Object.keys(abstract).forEach((key) => {
-                if (typeof abstract[key] === "string") {
-                    abstract[key] = utilModule.unsanitize(abstract[key]);
-                }
-            });
+            const documentId = await documentModule.addDocument(parameters.spaceId, bookDocument);
 
-            const documentId = await documentModule.addDocument(parameters.spaceId, documentData);
-
-            apis.success(documentId);
 
             const retryAsync = async (fn, retries = 3, delay = 2000) => {
                 for (let attempt = 1; attempt <= retries; attempt++) {
@@ -147,39 +140,29 @@ class GenerateBook extends IFlow {
                 const chapterId = await documentModule.addChapter(parameters.spaceId, documentId, chapterData);
 
                 for (const paragraph of chapter.paragraphs) {
-                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: paragraph.text});
+                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Generating...",id:paragraph.id});
                     paragraphTasks.push(() => retryAsync(async () => {
                         try {
-                            const paragraphGenerationPrompt = createParagraphPrompt(abstract, chapterData, paragraph.text);
-                            let response = await llmModule.sendLLMRequest({
-                                prompt: paragraphGenerationPrompt,
-                                modelName: "GPT-4o"
-                            }, parameters.spaceId);
-                            let paragraphJsonString;
-
-                            try {
-                                paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
-                            } catch (error) {
-                                response = await llmModule.sendLLMRequest({
-                                    prompt: paragraphGenerationPrompt,
-                                    modelName: "GPT-4o"
-                                }, parameters.spaceId);
-                                paragraphJsonString = await ensureValidJson(response.messages[0], 5, generateParagraphSchema);
-                            }
-
-                            const paragraphGenerated = JSON.parse(paragraphJsonString);
-                            paragraphGenerated.id = paragraphId;
-
-                            await documentModule.updateParagraph(parameters.spaceId, documentId, paragraphId, paragraphGenerated);
-                            return paragraphGenerated;
+                            const paragraphGenerationPrompt = createParagraphPrompt(JSON.parse(templateDocument.abstract), chapterData, paragraph.text);
+                            await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "ExpandParagraph", {
+                                spaceId:parameters.spaceId,
+                                prompt:paragraphGenerationPrompt,
+                                bookData:templateDocument.abstract,
+                                documentId:documentId,
+                                chapterId:chapterId,
+                                chapterTitle:chapter.title,
+                                chapterIdea:chapter.idea,
+                                paragraphId:paragraphId,
+                                paragraphSchema:generateParagraphSchema
+                            })
                         } catch (error) {
                             /* mark the paragraph as failed to generate */
                         }
                     }));
                 }
             }
-
-            await rateLimiter(paragraphTasks, 3);
+            apis.success(documentId);
+            await rateLimiter(paragraphTasks, 10);
 
         } catch (e) {
             apis.fail(e);

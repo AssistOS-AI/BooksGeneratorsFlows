@@ -1,9 +1,9 @@
 const IFlow = require('assistos').loadModule('flow', {}).IFlow;
 
-class GenerateChapterTemplate extends IFlow {
+class ExpandParagraph extends IFlow {
     static flowMetadata = {
-        action: "Generate a Chapter Template",
-        intent: "Generates a Chapter Template"
+        action: "Expand a Paragraph",
+        intent: "Expand a Paragraph"
     };
 
     static flowParametersSchema = {};
@@ -13,10 +13,11 @@ class GenerateChapterTemplate extends IFlow {
     }
 
     async userCode(apis, parameters) {
+        const llmModule = apis.loadModule("llm");
+        const documentModule = apis.loadModule("document");
+        const {spaceId,documentId,chapterId,paragraphId,prompt,bookData,chapterTitle,ChapterIdea,paragraphSchema} = parameters.configs;
+        apis.success(); // return immediately to avoid request timeout
         try {
-            const llmModule = apis.loadModule("llm");
-            const documentModule = apis.loadModule("document");
-
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
                     "RemoveOutsideJson": async (jsonString) => {
@@ -73,37 +74,37 @@ class GenerateChapterTemplate extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            const prompt = parameters.configs.prompt;
-            const spaceId = parameters.configs.spaceId;
-            const documentId = parameters.configs.documentId;
-            const chapterTitle = parameters.configs.chapterTitle;
-            const chapterIdea = parameters.configs.chapterIdea;
 
-            const chapterId = await documentModule.addChapter(spaceId, parameters.configs.documentId, {
-                idea: chapterIdea,
-                title: chapterTitle
-            });
-
-            apis.success(chapterId);
-
-            const llmResponse = await llmModule.sendLLMRequest({
-                prompt,
-                modelName: "o1-mini"
+            let response = await llmModule.sendLLMRequest({
+                prompt: prompt,
+                modelName: "o1-preview"
             }, parameters.spaceId);
 
-            const paragraphsJsonString = await ensureValidJson(llmResponse.messages[0], 5);
-            const paragraphsData = JSON.parse(paragraphsJsonString);
 
-            for (const paragraph of paragraphsData.paragraphs) {
-                const paragraphObj = {
-                    text: paragraph.idea,
-                };
-                await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
+            let paragraphJsonString;
+
+            try {
+                paragraphJsonString = await ensureValidJson(response.messages[0], 1,paragraphSchema);
+            } catch (error) {
+                response = await llmModule.sendLLMRequest({
+                    prompt: prompt,
+                    modelName: "o1-preview"
+                }, parameters.spaceId);
+                paragraphJsonString = await ensureValidJson(response.messages[0], 2);
             }
+
+            const paragraphGenerated = JSON.parse(paragraphJsonString);
+
+            paragraphGenerated.id = paragraphId;
+
+            await documentModule.updateParagraph(spaceId, documentId, paragraphId, paragraphGenerated);
+            return paragraphGenerated;
+
         } catch (e) {
+            await documentModule.updateParagraph(spaceId, documentId, paragraphId, {"text":`Error in expanding paragraph:${e.message}`,id:paragraphId});
             apis.fail(e);
         }
     }
 }
 
-module.exports = GenerateChapterTemplate;
+module.exports = ExpandParagraph;
