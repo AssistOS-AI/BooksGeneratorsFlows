@@ -158,9 +158,10 @@ class GenerateTemplate extends IFlow {
 
             const chapters = await getBookChaptersSchema();
 
+
             for (const chapter of chapters.chapters) {
                 const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapter);
-                applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
+                await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
                     spaceId: parameters.spaceId,
                     prompt: paragraphsPrompt,
                     bookData: bookData,

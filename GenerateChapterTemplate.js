@@ -13,10 +13,21 @@ class GenerateChapterTemplate extends IFlow {
     }
 
     async userCode(apis, parameters) {
-        try {
-            const llmModule = apis.loadModule("llm");
-            const documentModule = apis.loadModule("document");
+        const llmModule = apis.loadModule("llm");
+        const documentModule = apis.loadModule("document");
 
+        const prompt = parameters.configs.prompt;
+        const spaceId = parameters.configs.spaceId;
+        const documentId = parameters.configs.documentId;
+        const chapterTitle = parameters.configs.chapterTitle;
+        const chapterIdea = parameters.configs.chapterIdea;
+
+        const chapterId = await documentModule.addChapter(spaceId, parameters.configs.documentId, {
+            idea: chapterIdea,
+            title: chapterTitle
+        });
+
+        try {
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
                     "RemoveOutsideJson": async (jsonString) => {
@@ -73,19 +84,6 @@ class GenerateChapterTemplate extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            const prompt = parameters.configs.prompt;
-            const spaceId = parameters.configs.spaceId;
-            const documentId = parameters.configs.documentId;
-            const chapterTitle = parameters.configs.chapterTitle;
-            const chapterIdea = parameters.configs.chapterIdea;
-
-            const chapterId = await documentModule.addChapter(spaceId, parameters.configs.documentId, {
-                idea: chapterIdea,
-                title: chapterTitle
-            });
-
-            apis.success(chapterId);
-
             const llmResponse = await llmModule.sendLLMRequest({
                 prompt,
                 modelName: "o1-mini"
@@ -93,14 +91,15 @@ class GenerateChapterTemplate extends IFlow {
 
             const paragraphsJsonString = await ensureValidJson(llmResponse.messages[0], 5);
             const paragraphsData = JSON.parse(paragraphsJsonString);
-
             for (const paragraph of paragraphsData.paragraphs) {
                 const paragraphObj = {
                     text: paragraph.idea,
                 };
                 await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
             }
+            apis.success(chapterId);
         } catch (e) {
+            await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Failed to generate chapter template"});
             apis.fail(e);
         }
     }
