@@ -62,7 +62,7 @@ class GenerateTemplate extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "o1-mini"
+                            modelName: "GPT-4o"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -139,7 +139,7 @@ class GenerateTemplate extends IFlow {
             const getBookChaptersSchema = async () => {
                 const llmResponse = await llmModule.sendLLMRequest({
                     prompt: bookGenerationPrompt,
-                    modelName: "o1-mini"
+                    modelName: "GPT-4o"
                 }, parameters.spaceId);
                 const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5);
                 return JSON.parse(chaptersJsonString);
@@ -158,18 +158,27 @@ class GenerateTemplate extends IFlow {
 
             const chapters = await getBookChaptersSchema();
 
-
+            let chapterIds = []
             for (const chapter of chapters.chapters) {
-                const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapter);
-                await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
-                    spaceId: parameters.spaceId,
-                    prompt: paragraphsPrompt,
-                    bookData: bookData,
-                    documentId: documentId,
-                    chapterTitle: chapter.title,
-                    chapterIdea: chapter.idea
-                })
+                chapterIds.push(await documentModule.addChapter(parameters.spaceId, documentId,chapter));
             }
+            let chapterPromises = [];
+            for (let index = 0; index < chapters.chapters.length; index++) {
+                chapterPromises.push((async () => {
+                    const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapters.chapters[index]);
+                    await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
+                        spaceId: parameters.spaceId,
+                        prompt: paragraphsPrompt,
+                        bookData: bookData,
+                        documentId: documentId,
+                        chapterId: chapterIds[index],
+                        chapterPosition: index,
+                        chapterTitle: chapters.chapters[index].title,
+                        chapterIdea: chapters.chapters[index].idea
+                    })
+                })());
+            }
+            await Promise.all(chapterPromises);
         } catch (e) {
             apis.fail(e);
         }

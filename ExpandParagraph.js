@@ -15,8 +15,7 @@ class ExpandParagraph extends IFlow {
     async userCode(apis, parameters) {
         const llmModule = apis.loadModule("llm");
         const documentModule = apis.loadModule("document");
-        const {spaceId,documentId,chapterId,paragraphId,prompt,bookData,chapterTitle,ChapterIdea,paragraphSchema} = parameters.configs;
-        apis.success(); // return immediately to avoid request timeout
+        const {spaceId,documentId,paragraphPosition,totalChapters,totalParagraphs, chapterPosition,chapterId,paragraphId,prompt,bookData,chapterTitle,ChapterIdea,paragraphSchema} = parameters.configs;
         try {
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
@@ -52,7 +51,7 @@ class ExpandParagraph extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "o1-mini"
+                            modelName: "GPT-4o"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -74,13 +73,12 @@ class ExpandParagraph extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-
             let response = await llmModule.sendLLMRequest({
                 prompt: prompt,
-                modelName: "o1-preview"
+                modelName: "GPT-4o"
             }, parameters.spaceId);
 
-
+           // let response={messages:[JSON.stringify({text:"Test Text"})]} //mock for testing
             let paragraphJsonString;
 
             try {
@@ -88,7 +86,7 @@ class ExpandParagraph extends IFlow {
             } catch (error) {
                 response = await llmModule.sendLLMRequest({
                     prompt: prompt,
-                    modelName: "o1-preview"
+                    modelName: "GPT-4o"
                 }, parameters.spaceId);
                 paragraphJsonString = await ensureValidJson(response.messages[0], 2);
             }
@@ -98,8 +96,8 @@ class ExpandParagraph extends IFlow {
             paragraphGenerated.id = paragraphId;
 
             await documentModule.updateParagraph(spaceId, documentId, paragraphId, paragraphGenerated);
-            return paragraphGenerated;
-
+            console.info(`Chapter ${chapterPosition+1}/${totalChapters} --------------------------------Expanded Paragraph ${paragraphPosition+1}/${totalParagraphs} Successfully--------------------`);
+            apis.success(paragraphId);
         } catch (e) {
             await documentModule.updateParagraph(spaceId, documentId, paragraphId, {"text":`Error in expanding paragraph:${e.message}`,id:paragraphId});
             apis.fail(e);

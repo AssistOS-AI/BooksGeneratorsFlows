@@ -19,13 +19,10 @@ class GenerateChapterTemplate extends IFlow {
         const prompt = parameters.configs.prompt;
         const spaceId = parameters.configs.spaceId;
         const documentId = parameters.configs.documentId;
+        const chapterId = parameters.configs.chapterId;
         const chapterTitle = parameters.configs.chapterTitle;
         const chapterIdea = parameters.configs.chapterIdea;
-
-        const chapterId = await documentModule.addChapter(spaceId, parameters.configs.documentId, {
-            idea: chapterIdea,
-            title: chapterTitle
-        });
+        const chapterPosition = parameters.configs.chapterPosition;
 
         try {
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
@@ -62,7 +59,7 @@ class GenerateChapterTemplate extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "o1-mini"
+                            modelName: "GPT-4o"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -86,17 +83,19 @@ class GenerateChapterTemplate extends IFlow {
 
             const llmResponse = await llmModule.sendLLMRequest({
                 prompt,
-                modelName: "o1-mini"
+                modelName: "GPT-4o"
             }, parameters.spaceId);
 
             const paragraphsJsonString = await ensureValidJson(llmResponse.messages[0], 5);
             const paragraphsData = JSON.parse(paragraphsJsonString);
-            for (const paragraph of paragraphsData.paragraphs) {
+            for(let contor=0;contor<paragraphsData.paragraphs.length;contor++){
                 const paragraphObj = {
-                    text: paragraph.idea,
+                    text: paragraphsData.paragraphs[contor].idea,
                 };
                 await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
+                console.info(`Chapter:${chapterPosition}-----------------------Finished Paragraph ${contor+1}/${paragraphsData.paragraphs.length}-------------------------`);
             }
+            console.info(`-------------------------Finished Chapter ${chapterPosition}-------------------------`);
             apis.success(chapterId);
         } catch (e) {
             await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Failed to generate chapter template"});
