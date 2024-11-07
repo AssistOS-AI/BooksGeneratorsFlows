@@ -50,7 +50,7 @@ class RefineBook extends IFlow {
                 }
             }
 
-            const concurrencyLimit = 3; // Puteți ajusta limita de concurență după nevoie
+            const concurrencyLimit = 3;
             const taskQueue = new TaskQueue(concurrencyLimit);
 
             const retryAsync = async (fn, retries = 3, delay = 2000) => {
@@ -187,7 +187,7 @@ class RefineBook extends IFlow {
                     const chapters = book.chapters;
                     book.abstract = utilModule.unsanitize(book.abstract);
 
-                    // Adăugăm sarcinile în coadă
+
                     for (const [chapterIndex, chapter] of chapters.entries()) {
                         taskQueue.pushTask(async () => {
                             console.info(`Începem rafinarea pentru Capitolul ${chapterIndex + 1}/${chapters.length}`);

@@ -62,7 +62,7 @@ class GenerateTemplate extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "GPT-4o"
+                            modelName: "Qwen"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -139,7 +139,7 @@ class GenerateTemplate extends IFlow {
             const getBookChaptersSchema = async () => {
                 const llmResponse = await llmModule.sendLLMRequest({
                     prompt: bookGenerationPrompt,
-                    modelName: "GPT-4o"
+                    modelName: "Qwen"
                 }, parameters.spaceId);
                 const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5);
                 return JSON.parse(chaptersJsonString);
