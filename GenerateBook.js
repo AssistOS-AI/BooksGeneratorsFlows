@@ -173,7 +173,8 @@ class GenerateBook extends IFlow {
                 let paragraphIds = [];
 
                 for (let index = 0; index < templateDocument.chapters[chapterIndex].paragraphs.length; index++) {
-                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Generating..."});
+                    const paragraphId = await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Preparing for Generation..."});
+                    await documentModule.updateParagraphComment(parameters.spaceId, documentId, paragraphId, templateDocument.chapters[chapterIndex].paragraphs[index].text);
                     paragraphIds.push(paragraphId);
                 }
                 for(let index=0; index<paragraphIds.length; index++) {
@@ -184,6 +185,7 @@ class GenerateBook extends IFlow {
                                 chapterData,
                                 templateDocument.chapters[chapterIndex].paragraphs[index].text
                             );
+                            await documentModule.updateParagraphText(parameters.spaceId, documentId, paragraphIds[index], "Generating...with prompt: " + paragraphGenerationPrompt);
                             await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "ExpandParagraph", {
                                 spaceId: parameters.spaceId,
                                 prompt: paragraphGenerationPrompt,
