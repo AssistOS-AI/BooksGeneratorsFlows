@@ -13,6 +13,13 @@ class GenerateChapterTemplate extends IFlow {
     }
 
     async userCode(apis, parameters) {
+        this.rollback = async (e) => {
+            for (let index = 0; index < this.paragraphIds?.length; index++) {
+                await documentModule.deleteParagraph(parameters.spaceId, documentId, chapterId, this.paragraphIds[index]);
+            }
+            console.info(`-------------------------Rollback Chapter ${chapterPosition}-------------------------`);
+            apis.error(e+"LOG:chapterId:"+chapterId);
+        }
         const llmModule = apis.loadModule("llm");
         const documentModule = apis.loadModule("document");
 
@@ -61,7 +68,7 @@ class GenerateChapterTemplate extends IFlow {
                             prompt,
                             modelName: "Qwen"
                         }, parameters.spaceId);
-                        return response.messages[0];
+                        return response.messages?.[0] || response;
                     }
                 };
 
@@ -81,25 +88,25 @@ class GenerateChapterTemplate extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            const llmResponse = await llmModule.sendLLMRequest({
+            let llmResponse = await llmModule.sendLLMRequest({
                 prompt,
                 modelName: "Qwen"
             }, parameters.spaceId);
-
-            const paragraphsJsonString = await ensureValidJson(llmResponse.messages[0], 5);
+            llmResponse=llmResponse.messages?.[0] || llmResponse;
+            const paragraphsJsonString = await ensureValidJson(llmResponse, 5);
             const paragraphsData = JSON.parse(paragraphsJsonString);
-            for(let contor=0;contor<paragraphsData.paragraphs.length;contor++){
+            this.paragraphIds = [];
+            for (let contor = 0; contor < paragraphsData.paragraphs.length; contor++) {
                 const paragraphObj = {
                     text: paragraphsData.paragraphs[contor].idea,
                 };
-                await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj);
-                console.info(`Chapter:${chapterPosition}-----------------------Finished Paragraph ${contor+1}/${paragraphsData.paragraphs.length}-------------------------`);
+                this.paragraphIds.push(await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, paragraphObj));
+                console.info(`Chapter:${chapterPosition}-----------------------Finished Paragraph ${contor + 1}/${paragraphsData.paragraphs.length}-------------------------`);
             }
             console.info(`-------------------------Finished Chapter ${chapterPosition}-------------------------`);
             apis.success(chapterId);
         } catch (e) {
-            await documentModule.addParagraph(parameters.spaceId, documentId, chapterId, {text: "Failed to generate chapter template"});
-            apis.fail(e);
+            await this.rollback(e);
         }
     }
 }

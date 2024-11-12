@@ -51,7 +51,7 @@ class ExpandParagraph extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "GPT-4o"
+                            modelName: "Qwen"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -75,20 +75,21 @@ class ExpandParagraph extends IFlow {
 
             let response = await llmModule.sendLLMRequest({
                 prompt: prompt,
-                modelName: "GPT-4o"
+                modelName: "Qwen"
             }, parameters.spaceId);
+            response=response.messages?.[0]||response;
 
-           // let response={messages:[JSON.stringify({text:"Test Text"})]} //mock for testing
             let paragraphJsonString;
 
             try {
-                paragraphJsonString = await ensureValidJson(response.messages[0], 1,paragraphSchema);
+                paragraphJsonString = await ensureValidJson(response, 1,paragraphSchema);
             } catch (error) {
                 response = await llmModule.sendLLMRequest({
                     prompt: prompt,
-                    modelName: "GPT-4o"
+                    modelName: "Qwen"
                 }, parameters.spaceId);
-                paragraphJsonString = await ensureValidJson(response.messages[0], 2);
+                response=response.messages?.[0]||response;
+                paragraphJsonString = await ensureValidJson(response, 2);
             }
 
             const paragraphGenerated = JSON.parse(paragraphJsonString);
@@ -99,7 +100,7 @@ class ExpandParagraph extends IFlow {
             console.info(`Chapter ${chapterPosition+1}/${totalChapters} --------------------------------Expanded Paragraph ${paragraphPosition+1}/${totalParagraphs} Successfully--------------------`);
             apis.success(paragraphId);
         } catch (e) {
-            await documentModule.updateParagraph(spaceId, documentId, paragraphId, {"text":`Error in expanding paragraph:${e.message}`,id:paragraphId});
+            await documentModule.updateParagraph(spaceId, documentId, paragraphId, {"text":`Error in expanding paragraph:${e.message.message}`,id:paragraphId});
             apis.fail(e);
         }
     }

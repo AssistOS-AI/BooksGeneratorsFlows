@@ -64,7 +64,7 @@ class GenerateTemplate extends IFlow {
                             prompt,
                             modelName: "Qwen"
                         }, parameters.spaceId);
-                        return response.messages[0];
+                        return response.messages?.[0] || response;
                     }
                 };
 
@@ -119,15 +119,27 @@ class GenerateTemplate extends IFlow {
             }
 
             const createParagraphsPrompt = (generationTemplateStructure, bookData, chapterData) => {
-                const base = "You're a book content Manager. Your purpose is to generate a list of paragraphs based on user specifications" +
-                    ` which will be part of a chapter used to create a book. Your response should match this json schema: ${JSON.stringify(generationTemplateStructure)}.
-                    Please respect the number of paragraphs mentioned in the book data`
-                const bookInfo = `Book data: ${JSON.stringify(bookData)}`;
-                const chapterInfo = `Chapter data: ${JSON.stringify(chapterData)}`;
-                const overrideParagraphCountBias = "If you have any bias towards the number of paragraphs you're inclined to generate, revoke it. " +
-                    "Under no circumstance will you generate more or less paragraphs than the book data specifies(ideas per chapters)";
-                return [base, bookInfo, chapterInfo, overrideParagraphCountBias].join("\n");
+                const base = `You are a book content manager. Your task is to generate a list of paragraphs based on the user specifications, which will be part of a chapter in a book.
+
+                **Instructions**:
+                - Output your response **only** in JSON format matching the following schema:
+                ${JSON.stringify(generationTemplateStructure, null, 2)}
+                
+                - **Do not** include any text outside of the JSON output.
+                - Generate **exactly** the number of paragraphs specified in the book data (ideas per chapter).
+                - **Ignore any personal biases** toward the number of paragraphs.
+                
+                **Book Data**:
+                ${JSON.stringify(bookData, null, 2)}
+                
+                **Chapter Data**:
+                ${JSON.stringify(chapterData, null, 2)}
+                
+                Please generate the JSON output now.`;
+
+                return base;
             };
+
             const generationTemplateParagraphs = {
                 paragraphs: [
                     {
@@ -137,11 +149,12 @@ class GenerateTemplate extends IFlow {
             };
 
             const getBookChaptersSchema = async () => {
-                const llmResponse = await llmModule.sendLLMRequest({
+                let llmResponse = await llmModule.sendLLMRequest({
                     prompt: bookGenerationPrompt,
                     modelName: "Qwen"
                 }, parameters.spaceId);
-                const chaptersJsonString = await ensureValidJson(llmResponse.messages[0], 5);
+                llmResponse = llmResponse.messages?.[0] || llmResponse;
+                const chaptersJsonString = await ensureValidJson(llmResponse, 5);
                 return JSON.parse(chaptersJsonString);
             }
 
@@ -156,26 +169,39 @@ class GenerateTemplate extends IFlow {
             const documentId = await addDocumentTemplate(parameters);
             apis.success(documentId);
 
-            const chapters = await getBookChaptersSchema();
+            let chapters = await getBookChaptersSchema();
+            chapters = chapters.chapters || chapters;
 
             let chapterIds = []
-            for (const chapter of chapters.chapters) {
-                chapterIds.push(await documentModule.addChapter(parameters.spaceId, documentId,chapter));
+            for (const chapter of chapters) {
+                chapterIds.push(await documentModule.addChapter(parameters.spaceId, documentId, chapter));
             }
             let chapterPromises = [];
-            for (let index = 0; index < chapters.chapters.length; index++) {
+            for (let index = 0; index < chapters.length; index++) {
+
                 chapterPromises.push((async () => {
-                    const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapters.chapters[index]);
-                    await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
-                        spaceId: parameters.spaceId,
-                        prompt: paragraphsPrompt,
-                        bookData: bookData,
-                        documentId: documentId,
-                        chapterId: chapterIds[index],
-                        chapterPosition: index,
-                        chapterTitle: chapters.chapters[index].title,
-                        chapterIdea: chapters.chapters[index].idea
-                    })
+                    let retries = 5;
+                    const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapters[index]);
+                    while (retries > 0) {
+                        try {
+                            await applicationModule.runApplicationFlow(parameters.spaceId, "BooksGenerator", "GenerateChapterTemplate", {
+                                spaceId: parameters.spaceId,
+                                prompt: paragraphsPrompt,
+                                bookData: bookData,
+                                documentId: documentId,
+                                chapterId: chapterIds[index],
+                                chapterPosition: index,
+                                chapterTitle: chapters[index].title,
+                                chapterIdea: chapters[index].idea
+                            });
+                            break;
+                        } catch (e) {
+                            retries--;
+                        }
+                    } //fails silently
+                    if (retries === 0) {
+                        await documentModule.addParagraph(parameters.spaceId, documentId, chapterIds[index], {text: "Failed to generate chapter template"});
+                    }
                 })());
             }
             await Promise.all(chapterPromises);

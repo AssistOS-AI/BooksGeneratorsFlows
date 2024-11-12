@@ -53,7 +53,7 @@ class GenerateBook extends IFlow {
                         }
                         const response = await llmModule.sendLLMRequest({
                             prompt,
-                            modelName: "GPT-4o"
+                            modelName: "Qwen"
                         }, parameters.spaceId);
                         return response.messages[0];
                     }
@@ -80,13 +80,27 @@ class GenerateBook extends IFlow {
             };
 
             const createParagraphPrompt = (bookData, chapterData, paragraphIdea) => {
-                const base = `Your purpose is to write a comprehensive and detailed paragraph that is within a chapter of a book with the following specifications:`;
-                const paragraphTemplate = `Your response should only and only match this Structure in all circumstances: ${JSON.stringify(generateParagraphSchema)}. It should be a json string with a text field`;
-                const bookPrompt = `Details about the Book:${bookData}`
-                const chapterPrompt = `Details about the Chapter:${JSON.stringify(chapterData)}`;
-                const paragraphPrompt = `The paragraph should be about and expand on this idea: ${paragraphIdea}.`;
+                const base = `You are a book content manager. Your task is to write a comprehensive and detailed paragraph that will be part of a chapter in a book.`;
 
-                return [base, paragraphTemplate, bookPrompt, chapterPrompt, paragraphPrompt].join("\n");
+                const instructions = `
+                **Instructions**:
+                - Output your response **only** in JSON format matching the following schema:
+                ${JSON.stringify(generateParagraphSchema, null, 2)}
+                - **Do not** include any text outside of the JSON output.
+                - The paragraph should expand on the given idea.
+                
+                **Book Details**:
+                ${JSON.stringify(bookData, null, 2)}
+                
+                **Chapter Details**:
+                ${JSON.stringify(chapterData, null, 2)}
+                
+                **Paragraph Idea**:
+                "${paragraphIdea}"
+                
+                Please generate the JSON output now.`;
+
+                return [base, instructions].join("\n");
             };
 
             const templateDocument = await documentModule.getDocument(parameters.spaceId, parameters.configs.documentId);

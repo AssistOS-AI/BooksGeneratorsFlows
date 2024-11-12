@@ -13,46 +13,9 @@ class RefineBook extends IFlow {
     }
 
     async userCode(apis, parameters) {
+        const bookId = parameters.configs.bookId;
+        const spaceId = parameters.configs.spaceId;
         try {
-            const llmModule = apis.loadModule('llm');
-            const documentModule = apis.loadModule('document');
-            const utilModule = apis.loadModule('util');
-
-            const bookId = parameters.configs.bookId;
-            const spaceId = parameters.configs.spaceId;
-            const book = await documentModule.getDocument(spaceId, bookId);
-
-            class TaskQueue {
-                constructor(concurrency) {
-                    this.concurrency = concurrency;
-                    this.running = 0;
-                    this.taskQueue = [];
-                }
-
-                pushTask(task) {
-                    this.taskQueue.push(task);
-                    this.next();
-                }
-
-                next() {
-                    while (this.running < this.concurrency && this.taskQueue.length) {
-                        const task = this.taskQueue.shift();
-                        this.running++;
-                        task().then(() => {
-                            this.running--;
-                            this.next();
-                        }).catch((err) => {
-                            console.error('Task failed:', err);
-                            this.running--;
-                            this.next();
-                        });
-                    }
-                }
-            }
-
-            const concurrencyLimit = 3;
-            const taskQueue = new TaskQueue(concurrencyLimit);
-
             const retryAsync = async (fn, retries = 3, delay = 2000) => {
                 for (let attempt = 1; attempt <= retries; attempt++) {
                     try {
@@ -69,7 +32,6 @@ class RefineBook extends IFlow {
                     }
                 }
             };
-
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {
                     "RemoveOutsideJson": async (jsonString) => {
@@ -93,10 +55,12 @@ class RefineBook extends IFlow {
                         if (!jsonSchema) {
                             prompt = `Please convert the following string into a JSON string: "${jsonString}". Only respond with valid JSON.`;
                         } else {
-                            prompt = `Please convert the following string into JSON: ${jsonString}. Match this schema: ${JSON.stringify(jsonSchema)}. Only respond with valid JSON without any code blocks or syntax markers.`;
+                            prompt = `Please convert the following string into JSON format matching the following schema:
+${JSON.stringify(jsonSchema, null, 2)}
+Only respond with valid JSON without any code blocks or syntax markers.`;
                         }
-                        const response = await llmModule.sendLLMRequest({ prompt, modelName: "GPT-4o" }, spaceId);
-                        return response.messages[0];
+                        const response = await llmModule.sendLLMRequest({prompt, modelName: modelName}, spaceId);
+                        return response.messages?.[0] || response;
                     }
                 };
 
@@ -116,25 +80,25 @@ class RefineBook extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            const paragraphSchema = { text: "String" };
-
             const Algorithms = {
+                // Rafinare de context intre chunk-uri de paragrafe -> Asigura coerenta si fluiditate intre paragrafe
                 proceduralRefinement: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, chapter, book) => {
-                        const response = await retryAsync(async () => {
+                        let response = await retryAsync(async () => {
                             return await llmModule.sendLLMRequest({
                                 prompt,
-                                modelName: "GPT-4o"
+                                modelName: modelName
                             }, spaceId);
                         });
-
+                        response = response.messages?.[0] || response;
                         if (response) {
                             try {
-                                let generatedParagraph = await ensureValidJson(response.messages[0], 2, paragraphSchema);
+                                let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);
                                 generatedParagraph = JSON.parse(generatedParagraph);
-                                generatedParagraph.id = paragraph.id;
-                                await documentModule.updateParagraph(spaceId, book.id, chapter.id, paragraph.id, generatedParagraph);
+                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, generatedParagraph.text);
+                                paragraph.text = generatedParagraph.text; //update the local paragraph object
                             } catch (error) {
+                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, "Err");
                                 console.error(`Error processing response for paragraph ID: ${paragraph.id} in chapter ID: ${chapter.id}. Error: ${error.message}`);
                             }
                         } else {
@@ -144,42 +108,93 @@ class RefineBook extends IFlow {
 
                     const treatFirstParagraph = async (currentParagraph, currentChapter, book) => {
                         const generateRefinementPrompt = () => {
-                            return [
-                                `You're a book content manager. Your purpose is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.`,
-                                `Current paragraph: ${currentParagraph.text}`,
-                                `Chapter: {title: "${currentChapter.title}", idea: "${currentChapter.idea}"}`,
-                                `Book abstract: ${book.abstract}`,
-                                `Your response should be a JSON string matching the structure: ${JSON.stringify(paragraphSchema)}. Do not include any code blocks or syntax markers.`
-                            ].join("\n");
+                            return `
+                    You are a book content manager. Your task is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.
+                    
+                    **Instructions**:
+                    - Output your response **only** in JSON format matching the following schema:
+                    ${JSON.stringify(paragraphSchema, null, 2)}
+                    - **Do not** include any text outside of the JSON output.
+                    - Ensure the paragraph connects logically with the chapter and book content.
+                    
+                    **Book Abstract**:
+                    "${book.abstract}"
+                    
+                    **Chapter Details**:
+                    {
+                      "title": "${currentChapter.title}",
+                      "idea": "${currentChapter.idea}"
+                    }
+                    
+                    **Current Paragraph**:
+                    "${currentParagraph.text}"
+                    
+                    Please generate the refined paragraph in JSON format now.`;
                         };
                         await generateAndSendRequest(generateRefinementPrompt(), currentParagraph, currentChapter, book);
                     };
 
                     const treatLastParagraph = async (currentParagraph, previousParagraph, currentChapter, book) => {
                         const generateRefinementPrompt = () => {
-                            return [
-                                `You're a book content manager. Your purpose is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.`,
-                                `Current paragraph: ${currentParagraph.text}`,
-                                `Previous paragraph: ${previousParagraph.text}`,
-                                `Chapter: {title: "${currentChapter.title}", idea: "${currentChapter.idea}"}`,
-                                `Book abstract: ${book.abstract}`,
-                                `Your response should be a JSON string matching the structure: ${JSON.stringify(paragraphSchema)}. Do not include any code blocks or syntax markers.`
-                            ].join("\n");
+                            return `
+                    You are a book content manager. Your task is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.
+                    
+                    **Instructions**:
+                    - Output your response **only** in JSON format matching the following schema:
+                    ${JSON.stringify(paragraphSchema, null, 2)}
+                    - **Do not** include any text outside of the JSON output.
+                    - Ensure the paragraph connects logically with the chapter and book content.
+                    
+                    **Book Abstract**:
+                    "${book.abstract}"
+                    
+                    **Chapter Details**:
+                    {
+                      "title": "${currentChapter.title}",
+                      "idea": "${currentChapter.idea}"
+                    }
+                    
+                    **Previous Paragraph**:
+                    "${previousParagraph.text}"
+                    
+                    **Current Paragraph**:
+                    "${currentParagraph.text}"
+                    
+                    Please generate the refined paragraph in JSON format now.`;
                         };
                         await generateAndSendRequest(generateRefinementPrompt(), currentParagraph, currentChapter, book);
                     };
 
                     const treatMiddleParagraph = async (currentParagraph, previousParagraph, nextParagraph, currentChapter, book) => {
                         const generateRefinementPrompt = () => {
-                            return [
-                                `You're a book content manager. Your purpose is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.`,
-                                `Current paragraph: ${currentParagraph.text}`,
-                                `Previous paragraph: ${previousParagraph.text}`,
-                                `Next paragraph: ${nextParagraph.text}`,
-                                `Chapter: {title: "${currentChapter.title}", idea: "${currentChapter.idea}"}`,
-                                `Book abstract: ${book.abstract}`,
-                                `Your response should be a JSON string matching the structure: ${JSON.stringify(paragraphSchema)}. Do not include any code blocks or syntax markers.`
-                            ].join("\n");
+                            return `
+                    You are a book content manager. Your task is to refactor the current paragraph to blend seamlessly with the flow and content of the book and the chapter.
+                    
+                    **Instructions**:
+                    - Output your response **only** in JSON format matching the following schema:
+                    ${JSON.stringify(paragraphSchema, null, 2)}
+                    - **Do not** include any text outside of the JSON output.
+                    - Ensure the paragraph connects logically with the surrounding paragraphs, chapter, and book content.
+                    
+                    **Book Abstract**:
+                    "${book.abstract}"
+                    
+                    **Chapter Details**:
+                    {
+                      "title": "${currentChapter.title}",
+                      "idea": "${currentChapter.idea}"
+                    }
+                    
+                    **Previous Paragraph**:
+                    "${previousParagraph.text}"
+                    
+                    **Current Paragraph**:
+                    "${currentParagraph.text}"
+                    
+                    **Next Paragraph**:
+                    "${nextParagraph.text}"
+                    
+                    Please generate the refined paragraph in JSON format now.`;
                         };
                         await generateAndSendRequest(generateRefinementPrompt(), currentParagraph, currentChapter, book);
                     };
@@ -187,56 +202,117 @@ class RefineBook extends IFlow {
                     const chapters = book.chapters;
                     book.abstract = utilModule.unsanitize(book.abstract);
 
-
                     for (const [chapterIndex, chapter] of chapters.entries()) {
-                        taskQueue.pushTask(async () => {
-                            console.info(`Începem rafinarea pentru Capitolul ${chapterIndex + 1}/${chapters.length}`);
+                        console.info(`Începem rafinarea pentru Capitolul ${chapterIndex + 1}/${chapters.length}`);
 
-                            for (const [paragraphIndex, paragraph] of chapter.paragraphs.entries()) {
-                                console.info(`Refinăm Paragraful ${paragraphIndex + 1}/${chapter.paragraphs.length} din Capitolul ${chapterIndex + 1}`);
+                        for (const [paragraphIndex, paragraph] of chapter.paragraphs.entries()) {
+                            console.info(`Refinăm Paragraful ${paragraphIndex + 1}/${chapter.paragraphs.length} din Capitolul ${chapterIndex + 1}`);
 
-                                if (chapter.paragraphs.length === 1) {
-                                    await treatFirstParagraph(paragraph, chapter, book);
-                                } else if (paragraphIndex === 0) {
-                                    await treatFirstParagraph(paragraph, chapter, book);
-                                } else if (paragraphIndex === chapter.paragraphs.length - 1) {
-                                    await treatLastParagraph(paragraph, chapter.paragraphs[paragraphIndex - 1], chapter, book);
-                                } else {
-                                    await treatMiddleParagraph(
-                                        paragraph,
-                                        chapter.paragraphs[paragraphIndex - 1],
-                                        chapter.paragraphs[paragraphIndex + 1],
-                                        chapter,
-                                        book
-                                    );
-                                }
-
-                                console.info(`Finalizat rafinarea Paragrafului ${paragraphIndex + 1}/${chapter.paragraphs.length} din Capitolul ${chapterIndex + 1}`);
-                            }
-
-                            console.info(`Finalizat rafinarea pentru Capitolul ${chapterIndex + 1}/${chapters.length}`);
-                        });
-                    }
-
-                    await new Promise(resolve => {
-                        const checkCompletion = () => {
-                            if (taskQueue.running === 0 && taskQueue.taskQueue.length === 0) {
-                                resolve();
+                            if (chapter.paragraphs.length === 1) {
+                                await treatFirstParagraph(paragraph, chapter, book);
+                            } else if (paragraphIndex === 0) {
+                                await treatFirstParagraph(paragraph, chapter, book);
+                            } else if (paragraphIndex === chapter.paragraphs.length - 1) {
+                                await treatLastParagraph(paragraph, chapter.paragraphs[paragraphIndex - 1], chapter, book);
                             } else {
-                                setTimeout(checkCompletion, 500);
+                                await treatMiddleParagraph(
+                                  paragraph,
+                                  chapter.paragraphs[paragraphIndex - 1],
+                                  chapter.paragraphs[paragraphIndex + 1],
+                                  chapter,
+                                  book
+                                );
                             }
-                        };
-                        checkCompletion();
-                    });
-                }
+
+                            console.info(`Finalizat rafinarea Paragrafului ${paragraphIndex + 1}/${chapter.paragraphs.length} din Capitolul ${chapterIndex + 1}`);
+                        }
+
+                        console.info(`Finalizat rafinarea pentru Capitolul ${chapterIndex + 1}/${chapters.length}`);
+
+                    }
+                },
+                // Rafinare de tranzitie intre paragrafe
+                transitionEnhancer: async (book) => {
+                    const generateAndSendRequest = async (prompt, paragraph, previousParagraph, chapter) => {
+                        let response = await retryAsync(async () => {
+                            return await llmModule.sendLLMRequest({
+                                prompt,
+                                modelName: modelName
+                            }, spaceId);
+                        });
+                        response = response.messages?.[0] || response;
+                        if (response) {
+                            try {
+                                let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);
+                                generatedParagraph = JSON.parse(generatedParagraph);
+                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, generatedParagraph.text);
+                                paragraph.text = generatedParagraph.text;
+                            } catch (error) {
+                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, "Err");
+                                console.error(`Error processing response for paragraph ID: ${paragraph.id} in chapter ID: ${chapter.id}. Error: ${error.message}`);
+                            }
+                        } else {
+                            console.warn(`Failed to refine paragraph ID: ${paragraph.id} in chapter ID: ${chapter.id}. Skipping this paragraph.`);
+                        }
+                    };
+
+                    for (const chapter of book.chapters) {
+                        for (let i = 0; i < chapter.paragraphs.length; i++) {
+                            const paragraph = chapter.paragraphs[i];
+                            const previousParagraph = i > 0 ? chapter.paragraphs[i - 1] : null;
+
+                            const prompt = `
+                            You are an editor improving transitions between paragraphs.
+                        
+                            **Instructions**:
+                            - If applicable, adjust the beginning of the current paragraph to connect smoothly with the previous paragraph.
+                            - Ensure logical progression and coherent flow.
+                            - Output your response **only** in JSON format matching the following schema:
+                            ${JSON.stringify(paragraphSchema, null, 2)}
+                            - **Do not** include any text outside of the JSON output.
+                        
+                            ${previousParagraph ? `**Previous Paragraph**:\n"${previousParagraph.text}"` : ''}
+                            **Current Paragraph**:
+                            "${paragraph.text}"
+                        
+                            Please provide the refined paragraph in JSON format now.`;
+
+                            await generateAndSendRequest(prompt, paragraph, previousParagraph, chapter);
+                        }
+                    }
+                },
+                // Rafinare/Corectare de stil dupa personalitatea selectata -> Mentinere unui stil consistent sau pentru a adapta textul la un anumit ton/voce narativa
+                styleCorrection: async (book) => {},
+                // Extindere paragrafe curente -> Imbogatire continut unde este necesar
+                deepParagraphExpansion: async (book) => {},
+                // Adaugare de noi paragrafe in capitole -> acoperirea mai multor sub-teme in capitole
+                deepChapterExpansion: async (book) => {},
+                // Adaugare de noi capitole in carte -> introduce noi teme si subiecte
+                deepBookExpansion: async (book) => {}
             };
 
-            await Algorithms.proceduralRefinement(book);
+            const llmModule = apis.loadModule('llm');
+            const documentModule = apis.loadModule('document');
+            const utilModule = apis.loadModule('util');
 
-            apis.success('Book refinement completed successfully.');
+            const book = await documentModule.getDocument(spaceId, bookId);
+            const modelName = "Qwen";
+
+            const paragraphSchema = {"text": "String"};
+
+            await new Promise(resolve=>{
+                setTimeout(resolve,1000)
+            })
+            await Algorithms.proceduralRefinement(book);
+            await Algorithms.transitionEnhancer(book);
+            await Algorithms.styleCorrection(book);
+            await Algorithms.deepParagraphExpansion(book);
+            await Algorithms.deepChapterExpansion(book);
+            await Algorithms.deepBookExpansion(book);
+
+            apis.success(book);
         } catch (error) {
-            console.error('Error in RefineBook userCode:', error);
-            apis.fail(error);
+            apis.fail(error.message);
         }
     }
 }
