@@ -60,7 +60,7 @@ class GenerateTemplate extends IFlow {
                              Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
                              Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        const response = await llmModule.sendLLMRequest({
+                        const response = await llmModule.generateText({
                             prompt,
                             modelName: "Qwen"
                         }, parameters.spaceId);
@@ -149,7 +149,7 @@ class GenerateTemplate extends IFlow {
             };
 
             const getBookChaptersSchema = async () => {
-                let llmResponse = await llmModule.sendLLMRequest({
+                let llmResponse = await llmModule.generateText({
                     prompt: bookGenerationPrompt,
                     modelName: "Qwen"
                 }, parameters.spaceId);

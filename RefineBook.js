@@ -59,7 +59,7 @@ class RefineBook extends IFlow {
 ${JSON.stringify(jsonSchema, null, 2)}
 Only respond with valid JSON without any code blocks or syntax markers.`;
                         }
-                        const response = await llmModule.sendLLMRequest({prompt, modelName: modelName}, spaceId);
+                        const response = await llmModule.generateText({prompt, modelName: modelName}, spaceId);
                         return response.messages?.[0] || response;
                     }
                 };
@@ -85,7 +85,7 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                 proceduralRefinement: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, chapter, book) => {
                         let response = await retryAsync(async () => {
-                            return await llmModule.sendLLMRequest({
+                            return await llmModule.generateText({
                                 prompt,
                                 modelName: modelName
                             }, spaceId);
@@ -95,10 +95,10 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                             try {
                                 let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);
                                 generatedParagraph = JSON.parse(generatedParagraph);
-                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, generatedParagraph.text);
+                                await documentModule.updateParagraphText(spaceId, book.id, paragraph.id, generatedParagraph.text);
                                 paragraph.text = generatedParagraph.text; //update the local paragraph object
                             } catch (error) {
-                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, "Err");
+                                await documentModule.updateParagraphText(spaceId, book.id,  paragraph.id, "Error refining paragraph: " + error.message);
                                 console.error(`Error processing response for paragraph ID: ${paragraph.id} in chapter ID: ${chapter.id}. Error: ${error.message}`);
                             }
                         } else {
@@ -235,7 +235,7 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                 transitionEnhancer: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, previousParagraph, chapter) => {
                         let response = await retryAsync(async () => {
-                            return await llmModule.sendLLMRequest({
+                            return await llmModule.generateText({
                                 prompt,
                                 modelName: modelName
                             }, spaceId);
@@ -245,10 +245,10 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                             try {
                                 let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);
                                 generatedParagraph = JSON.parse(generatedParagraph);
-                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, generatedParagraph.text);
+                                await documentModule.updateParagraphText(spaceId, book.id,  paragraph.id, generatedParagraph.text);
                                 paragraph.text = generatedParagraph.text;
                             } catch (error) {
-                                await documentModule.updateParagraphText(spaceId, book.id, chapter.id, paragraph.id, "Err");
+                                await documentModule.updateParagraphText(spaceId, book.id,  paragraph.id, "Err");
                                 console.error(`Error processing response for paragraph ID: ${paragraph.id} in chapter ID: ${chapter.id}. Error: ${error.message}`);
                             }
                         } else {
@@ -300,9 +300,6 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
 
             const paragraphSchema = {"text": "String"};
 
-            await new Promise(resolve=>{
-                setTimeout(resolve,1000)
-            })
             await Algorithms.proceduralRefinement(book);
             await Algorithms.transitionEnhancer(book);
             await Algorithms.styleCorrection(book);
