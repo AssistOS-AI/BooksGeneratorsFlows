@@ -95,7 +95,7 @@ class RefineBook extends IFlow {
                         } else {
                             prompt = `Please convert the following string into JSON: ${jsonString}. Match this schema: ${JSON.stringify(jsonSchema)}. Only respond with valid JSON without any code blocks or syntax markers.`;
                         }
-                        const response = await llmModule.sendLLMRequest({ prompt, modelName: "GPT-4o" }, spaceId);
+                        const response = await llmModule.generateText({ prompt, modelName: "GPT-4o" }, spaceId);
                         return response.messages[0];
                     }
                 };
@@ -122,7 +122,7 @@ class RefineBook extends IFlow {
                 proceduralRefinement: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, chapter, book) => {
                         const response = await retryAsync(async () => {
-                            return await llmModule.sendLLMRequest({
+                            return await llmModule.generateText({
                                 prompt,
                                 modelName: "GPT-4o"
                             }, spaceId);
