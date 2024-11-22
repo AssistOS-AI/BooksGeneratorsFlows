@@ -64,11 +64,8 @@ class GenerateChapterTemplate extends IFlow {
                              Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
                              Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        const response = await llmModule.generateText({
-                            prompt,
-                            modelName: "Qwen"
-                        }, parameters.spaceId);
-                        return response.messages?.[0] || response;
+                        const response= await llmModule.generateText(parameters.spaceId, prompt, parameters.personality)
+                        return response.message;
                     }
                 };
 
@@ -88,11 +85,9 @@ class GenerateChapterTemplate extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            let llmResponse = await llmModule.generateText({
-                prompt,
-                modelName: "Qwen"
-            }, parameters.spaceId);
-            llmResponse=llmResponse.messages?.[0] || llmResponse;
+
+            let llmResponse=await llmModule.generateText(parameters.spaceId, prompt, parameters.personality);
+            llmResponse=llmResponse.message
             const paragraphsJsonString = await ensureValidJson(llmResponse, 5);
             const paragraphsData = JSON.parse(paragraphsJsonString);
             this.paragraphIds = [];

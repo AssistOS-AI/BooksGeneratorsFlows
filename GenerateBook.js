@@ -16,7 +16,6 @@ class GenerateBook extends IFlow {
         try {
             const llmModule = apis.loadModule("llm");
             const documentModule = apis.loadModule("document");
-            const utilModule = apis.loadModule("util");
             const applicationModule = apis.loadModule("application");
 
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
@@ -51,11 +50,8 @@ class GenerateBook extends IFlow {
                              Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
                              Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        const response = await llmModule.generateText({
-                            prompt,
-                            modelName: "Qwen"
-                        }, parameters.spaceId);
-                        return response.messages[0];
+                        const response= await llmModule.generateText(parameters.spaceId, prompt, parameters.personality)
+                        return response.message;
                     }
                 };
 

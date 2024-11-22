@@ -59,8 +59,8 @@ class RefineBook extends IFlow {
 ${JSON.stringify(jsonSchema, null, 2)}
 Only respond with valid JSON without any code blocks or syntax markers.`;
                         }
-                        const response = await llmModule.generateText({prompt, modelName: modelName}, spaceId);
-                        return response.messages?.[0] || response;
+                        const response= await llmModule.generateText(parameters.spaceId, prompt, parameters.personality)
+                        return response.message;
                     }
                 };
 
@@ -85,12 +85,9 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                 proceduralRefinement: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, chapter, book) => {
                         let response = await retryAsync(async () => {
-                            return await llmModule.generateText({
-                                prompt,
-                                modelName: modelName
-                            }, spaceId);
+                            return await llmModule.generateText(spaceId, prompt, parameters.personality);
                         });
-                        response = response.messages?.[0] || response;
+                        response = response.message
                         if (response) {
                             try {
                                 let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);
@@ -235,12 +232,9 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                 transitionEnhancer: async (book) => {
                     const generateAndSendRequest = async (prompt, paragraph, previousParagraph, chapter) => {
                         let response = await retryAsync(async () => {
-                            return await llmModule.generateText({
-                                prompt,
-                                modelName: modelName
-                            }, spaceId);
+                            return await llmModule.generateText(spaceId, prompt, parameters.personality);
                         });
-                        response = response.messages?.[0] || response;
+                        response = response.message
                         if (response) {
                             try {
                                 let generatedParagraph = await ensureValidJson(response, 3, paragraphSchema);

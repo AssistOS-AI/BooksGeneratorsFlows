@@ -49,11 +49,8 @@ class ExpandParagraph extends IFlow {
                              Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
                              Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        const response = await llmModule.generateText({
-                            prompt,
-                            modelName: "Qwen"
-                        }, parameters.spaceId);
-                        return response.messages[0];
+                        const response= await llmModule.generateText(parameters.spaceId, prompt, parameters.personality)
+                        return response.message;
                     }
                 };
 
@@ -73,22 +70,15 @@ class ExpandParagraph extends IFlow {
                 throw new Error("Unable to ensure valid JSON after all phases.");
             };
 
-            let response = await llmModule.generateText({
-                prompt: prompt,
-                modelName: "Qwen"
-            }, parameters.spaceId);
-            response=response.messages?.[0]||response;
+            let response=await llmModule.generateText(parameters.spaceId, prompt, parameters.personality);
+            response=response.message
 
             let paragraphJsonString;
 
             try {
                 paragraphJsonString = await ensureValidJson(response, 1,paragraphSchema);
             } catch (error) {
-                response = await llmModule.generateText({
-                    prompt: prompt,
-                    modelName: "Qwen"
-                }, parameters.spaceId);
-                response=response.messages?.[0]||response;
+                response=await llmModule.generateText(parameters.spaceId, prompt, parameters.personality);
                 paragraphJsonString = await ensureValidJson(response, 2);
             }
 

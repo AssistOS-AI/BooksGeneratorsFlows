@@ -60,11 +60,8 @@ class GenerateTemplate extends IFlow {
                              Only respond with a valid Json that doesn't contain any code blocks or the \`\`\`json syntax.
                              Your response should match this json schema: ${JSON.stringify(jsonSchema)}`;
                         }
-                        const response = await llmModule.generateText({
-                            prompt,
-                            modelName: "Qwen"
-                        }, parameters.spaceId);
-                        return response.messages?.[0] || response;
+                        const response= await llmModule.generateText(parameters.spaceId, prompt, parameters.personality)
+                        return response.message;
                     }
                 };
 
@@ -149,11 +146,8 @@ class GenerateTemplate extends IFlow {
             };
 
             const getBookChaptersSchema = async () => {
-                let llmResponse = await llmModule.generateText({
-                    prompt: bookGenerationPrompt,
-                    modelName: "Qwen"
-                }, parameters.spaceId);
-                llmResponse = llmResponse.messages?.[0] || llmResponse;
+                let llmResponse = await llmModule.generateText(parameters.spaceId, bookGenerationPrompt,parameters.personality)
+                llmResponse = llmResponse.message
                 const chaptersJsonString = await ensureValidJson(llmResponse, 5);
                 return JSON.parse(chaptersJsonString);
             }
@@ -178,7 +172,6 @@ class GenerateTemplate extends IFlow {
             }
             let chapterPromises = [];
             for (let index = 0; index < chapters.length; index++) {
-
                 chapterPromises.push((async () => {
                     let retries = 5;
                     const paragraphsPrompt = createParagraphsPrompt(generationTemplateParagraphs, bookData, chapters[index]);
