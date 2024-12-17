@@ -23,10 +23,10 @@ class GenerateTemplate extends IFlow {
 
     async userCode(apis, parameters) {
         try {
-            const llmModule = apis.loadModule("llm");
-            const documentModule = apis.loadModule("document");
-            const utilModule = apis.loadModule("util");
-            const applicationModule = apis.loadModule("application");
+            const llmModule = await apis.loadModule("llm");
+            const documentModule = await apis.loadModule("document");
+            const utilModule = await apis.loadModule("util");
+            const applicationModule = await apis.loadModule("application");
 
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
                 const phases = {

@@ -285,9 +285,9 @@ Only respond with valid JSON without any code blocks or syntax markers.`;
                 deepBookExpansion: async (book) => {}
             };
 
-            const llmModule = apis.loadModule('llm');
-            const documentModule = apis.loadModule('document');
-            const utilModule = apis.loadModule('util');
+            const llmModule = await apis.loadModule('llm');
+            const documentModule = await apis.loadModule('document');
+            const utilModule = await apis.loadModule('util');
 
             const book = await documentModule.getDocument(spaceId, bookId);
             const modelName = "Qwen";

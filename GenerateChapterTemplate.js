@@ -20,8 +20,8 @@ class GenerateChapterTemplate extends IFlow {
             console.info(`-------------------------Rollback Chapter ${chapterPosition}-------------------------`);
             apis.error(e+"LOG:chapterId:"+chapterId);
         }
-        const llmModule = apis.loadModule("llm");
-        const documentModule = apis.loadModule("document");
+        const llmModule = await apis.loadModule("llm");
+        const documentModule = await apis.loadModule("document");
 
         const prompt = parameters.configs.prompt;
         const spaceId = parameters.configs.spaceId;

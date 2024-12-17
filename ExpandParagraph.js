@@ -13,8 +13,8 @@ class ExpandParagraph extends IFlow {
     }
 
     async userCode(apis, parameters) {
-        const llmModule = apis.loadModule("llm");
-        const documentModule = apis.loadModule("document");
+        const llmModule = await apis.loadModule("llm");
+        const documentModule = await apis.loadModule("document");
         const {spaceId,documentId,paragraphPosition,totalChapters,totalParagraphs, chapterPosition,chapterId,paragraphId,prompt,bookData,chapterTitle,ChapterIdea,paragraphSchema} = parameters.configs;
         try {
             const ensureValidJson = async (jsonString, maxIterations = 1, jsonSchema = null) => {
